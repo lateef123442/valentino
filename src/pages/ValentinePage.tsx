@@ -23,6 +23,19 @@ const DEMO_DATA: ValentineData = {
   createdAt: new Date().toISOString(),
 };
 
+// Helper functions to encode/decode proposal data for URL sharing
+const encodeProposal = (data: ValentineData): string => {
+  return btoa(JSON.stringify(data));
+};
+
+const decodeProposal = (encoded: string): ValentineData | null => {
+  try {
+    return JSON.parse(atob(encoded));
+  } catch {
+    return null;
+  }
+};
+
 export default function ValentinePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -32,6 +45,17 @@ export default function ValentinePage() {
   const [noClickCount, setNoClickCount] = useState(0);
 
   useEffect(() => {
+    // Check if data is encoded in the URL hash (for shareable links)
+    const hash = window.location.hash.substring(1); // Remove the '#'
+    if (hash) {
+      const decoded = decodeProposal(hash);
+      if (decoded) {
+        setProposal(decoded);
+        return;
+      }
+    }
+
+    // Fallback to existing logic
     if (id === 'demo') {
       setProposal(DEMO_DATA);
     } else if (id) {
@@ -114,26 +138,34 @@ export default function ValentinePage() {
   };
 
   const handleShare = async () => {
-    const url = window.location.href;
+    // Generate a shareable URL with encoded data in the hash
+    const baseUrl = window.location.origin + window.location.pathname;
+    const encoded = encodeProposal(proposal!);
+    const shareableUrl = `${baseUrl}#${encoded}`;
     
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'ValLink - Valentine Proposal',
           text: 'Someone special created this for you! 💕',
-          url,
+          url: shareableUrl,
         });
       } catch {
         // User cancelled or error
       }
     } else {
-      navigator.clipboard.writeText(url);
+      navigator.clipboard.writeText(shareableUrl);
       toast.success('Link copied to clipboard!');
     }
   };
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+    // Generate a shareable URL with encoded data in the hash
+    const baseUrl = window.location.origin + window.location.pathname;
+    const encoded = encodeProposal(proposal!);
+    const shareableUrl = `${baseUrl}#${encoded}`;
+    
+    navigator.clipboard.writeText(shareableUrl);
     toast.success('Link copied!');
   };
 
