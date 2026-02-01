@@ -24,15 +24,19 @@ const DEMO_DATA: ValentineData = {
 
 // --- HELPER FUNCTIONS FOR UNIVERSAL SHARING ---
 const encodeProposal = (data: ValentineData): string => {
-  // Use URI encoding to handle emojis and special characters before base64
-  return btoa(encodeURIComponent(JSON.stringify(data)));
+  // Use encodeURIComponent to make sure symbols and emojis don't break
+  const jsonString = JSON.stringify(data);
+  return btoa(encodeURIComponent(jsonString));
 };
 
 const decodeProposal = (encoded: string): ValentineData | null => {
   try {
-    return JSON.parse(decodeURIComponent(atob(encoded)));
+    // We must decode the URI components AFTER atob
+    const decodedB64 = atob(encoded);
+    const decodedJson = decodeURIComponent(decodedB64);
+    return JSON.parse(decodedJson);
   } catch (e) {
-    console.error("Failed to decode proposal data", e);
+    console.error("Decoding error:", e);
     return null;
   }
 };
