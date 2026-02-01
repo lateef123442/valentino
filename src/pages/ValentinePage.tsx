@@ -12,7 +12,6 @@ import confetti from 'canvas-confetti';
 
 type Stage = 'intro' | 'message' | 'question' | 'celebration' | 'whatsapp';
 
-// Demo data for when no proposal is found
 const DEMO_DATA: ValentineData = {
   id: 'demo',
   senderName: 'Your Secret Admirer',
@@ -23,15 +22,17 @@ const DEMO_DATA: ValentineData = {
   createdAt: new Date().toISOString(),
 };
 
-// Helper functions to encode/decode proposal data for URL sharing
+// --- HELPER FUNCTIONS FOR UNIVERSAL SHARING ---
 const encodeProposal = (data: ValentineData): string => {
-  return btoa(JSON.stringify(data));
+  // Use URI encoding to handle emojis and special characters before base64
+  return btoa(encodeURIComponent(JSON.stringify(data)));
 };
 
 const decodeProposal = (encoded: string): ValentineData | null => {
   try {
-    return JSON.parse(atob(encoded));
-  } catch {
+    return JSON.parse(decodeURIComponent(atob(encoded)));
+  } catch (e) {
+    console.error("Failed to decode proposal data", e);
     return null;
   }
 };
@@ -45,8 +46,8 @@ export default function ValentinePage() {
   const [noClickCount, setNoClickCount] = useState(0);
 
   useEffect(() => {
-    // Check if data is encoded in the URL hash (for shareable links)
-    const hash = window.location.hash.substring(1); // Remove the '#'
+    // 1. Check if data is encoded in the URL hash (Critical for cross-device sharing)
+    const hash = window.location.hash.substring(1);
     if (hash) {
       const decoded = decodeProposal(hash);
       if (decoded) {
@@ -55,7 +56,7 @@ export default function ValentinePage() {
       }
     }
 
-    // Fallback to existing logic
+    // 2. Fallback to Local Storage/ID (Mainly for the creator's preview)
     if (id === 'demo') {
       setProposal(DEMO_DATA);
     } else if (id) {
@@ -84,30 +85,15 @@ export default function ValentinePage() {
     const duration = 5000;
     const animationEnd = Date.now() + duration;
     const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
-
     const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
 
     const interval = setInterval(() => {
       const timeLeft = animationEnd - Date.now();
-      if (timeLeft <= 0) {
-        clearInterval(interval);
-        return;
-      }
+      if (timeLeft <= 0) return clearInterval(interval);
 
       const particleCount = 50 * (timeLeft / duration);
-      
-      confetti({
-        ...defaults,
-        particleCount,
-        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
-        colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'],
-      });
-      confetti({
-        ...defaults,
-        particleCount,
-        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
-        colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'],
-      });
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'] });
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'] });
     }, 250);
   };
 
@@ -126,23 +112,20 @@ export default function ValentinePage() {
   const handleNoClick = () => {
     setNoClickCount((prev) => prev + 1);
     handleNoHover();
-    
-    const messages = [
-      "Are you sure? 🥺",
-      "Please reconsider! 💔",
-      "One more chance? 🙏",
-      "My heart can't take this! 😢",
-      "Okay okay, but... really? 💕",
-    ];
+    const messages = ["Are you sure? 🥺", "Please reconsider! 💔", "One more chance? 🙏", "My heart can't take this! 😢", "Okay okay, but... really? 💕"];
     toast(messages[noClickCount % messages.length]);
   };
 
-  const handleShare = async () => {
-    // Generate a shareable URL with encoded data in the hash
+  // --- UPDATED SHARE LOGIC ---
+  const getShareableUrl = () => {
+    if (!proposal) return window.location.href;
     const baseUrl = window.location.origin + window.location.pathname;
-    const encoded = encodeProposal(proposal!);
-    const shareableUrl = `${baseUrl}#${encoded}`;
-    
+    const encoded = encodeProposal(proposal);
+    return `${baseUrl}#${encoded}`;
+  };
+
+  const handleShare = async () => {
+    const shareableUrl = getShareableUrl();
     if (navigator.share) {
       try {
         await navigator.share({
@@ -150,32 +133,22 @@ export default function ValentinePage() {
           text: 'Someone special created this for you! 💕',
           url: shareableUrl,
         });
-      } catch {
-        // User cancelled or error
-      }
+      } catch (err) { /* Handle cancel */ }
     } else {
-      navigator.clipboard.writeText(shareableUrl);
-      toast.success('Link copied to clipboard!');
+      handleCopyLink();
     }
   };
 
   const handleCopyLink = () => {
-    // Generate a shareable URL with encoded data in the hash
-    const baseUrl = window.location.origin + window.location.pathname;
-    const encoded = encodeProposal(proposal!);
-    const shareableUrl = `${baseUrl}#${encoded}`;
-    
+    const shareableUrl = getShareableUrl();
     navigator.clipboard.writeText(shareableUrl);
-    toast.success('Link copied!');
+    toast.success('Link copied to clipboard! You can now send it to anyone.');
   };
 
   if (!proposal) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-        >
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
           <Heart className="w-12 h-12 text-primary" />
         </motion.div>
       </div>
@@ -187,132 +160,61 @@ export default function ValentinePage() {
       <ParticleBackground />
       <FloatingHearts />
 
-      {/* Back button (only for demo) */}
       {id === 'demo' && (
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/')}
-          className="absolute top-4 left-4 z-50 text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back
+        <Button variant="ghost" onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </Button>
       )}
 
-      {/* Share button */}
       <div className="absolute top-4 right-4 z-50 flex gap-2">
-        <Button variant="ghost" size="icon" onClick={handleCopyLink}>
+        <Button variant="ghost" size="icon" onClick={handleCopyLink} title="Copy shareable link">
           <Copy className="w-4 h-4" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={handleShare}>
+        <Button variant="ghost" size="icon" onClick={handleShare} title="Share via apps">
           <Share2 className="w-4 h-4" />
         </Button>
       </div>
 
       <AnimatePresence mode="wait">
-        {/* Intro Stage */}
         {stage === 'intro' && (
-          <motion.div
-            key="intro"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="text-center px-4"
-          >
-            <motion.div
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-            >
+          <motion.div key="intro" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="text-center px-4">
+            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
               <Heart className="w-24 h-24 text-primary mx-auto mb-8 fill-primary/30" />
             </motion.div>
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              className="text-4xl md:text-6xl font-serif font-bold gradient-text mb-4"
-            >
+            <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-4xl md:text-6xl font-serif font-bold gradient-text mb-4">
               {proposal.recipientName || 'Hey You'}
             </motion.h1>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-              className="text-xl text-muted-foreground"
-            >
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="text-xl text-muted-foreground">
               Someone special has a message for you...
             </motion.p>
           </motion.div>
         )}
 
-        {/* Message Stage */}
         {stage === 'message' && (
-          <motion.div
-            key="message"
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="text-center px-4 max-w-2xl"
-          >
-            <motion.div
-              className="glass-card p-8 md:p-12"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-            >
+          <motion.div key="message" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }} className="text-center px-4 max-w-2xl">
+            <motion.div className="glass-card p-8 md:p-12" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
               <Sparkles className="w-8 h-8 text-accent mx-auto mb-4" />
-              <p className="text-xl md:text-2xl text-foreground/90 leading-relaxed italic mb-6">
-                "{proposal.message}"
-              </p>
-              <p className="text-muted-foreground">
-                — {proposal.senderName}
-              </p>
+              <p className="text-xl md:text-2xl text-foreground/90 leading-relaxed italic mb-6">"{proposal.message}"</p>
+              <p className="text-muted-foreground">— {proposal.senderName}</p>
             </motion.div>
           </motion.div>
         )}
 
-        {/* Question Stage */}
         {stage === 'question' && (
-          <motion.div
-            key="question"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.2 }}
-            className="text-center px-4"
-          >
-            <motion.div
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
+          <motion.div key="question" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.2 }} className="text-center px-4">
+            <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }}>
               <Heart className="w-20 h-20 text-primary mx-auto mb-8 fill-primary/50" />
             </motion.div>
-            
-            <h2 className="text-4xl md:text-6xl font-serif font-bold mb-4 text-glow">
-              Will You Be My
-            </h2>
-            <h1 className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-12">
-              Valentine?
-            </h1>
-
+            <h2 className="text-4xl md:text-6xl font-serif font-bold mb-4 text-glow">Will You Be My</h2>
+            <h1 className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-12">Valentine?</h1>
             <div className="flex flex-col sm:flex-row justify-center gap-6 items-center">
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button
-                  onClick={handleYesClick}
-                  className="btn-romantic text-xl px-12 py-8 rounded-full"
-                >
-                  <Heart className="w-6 h-6 mr-2 fill-current" />
-                  Yes! 💕
+                <Button onClick={handleYesClick} className="btn-romantic text-xl px-12 py-8 rounded-full">
+                  <Heart className="w-6 h-6 mr-2 fill-current" /> Yes! 💕
                 </Button>
               </motion.div>
-
-              <motion.div
-                animate={{ x: noButtonPosition.x, y: noButtonPosition.y }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                onMouseEnter={handleNoHover}
-              >
-                <Button
-                  variant="outline"
-                  onClick={handleNoClick}
-                  className="text-xl px-12 py-8 rounded-full border-muted-foreground/30 hover:border-muted-foreground/50"
-                >
+              <motion.div animate={{ x: noButtonPosition.x, y: noButtonPosition.y }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} onMouseEnter={handleNoHover}>
+                <Button variant="outline" onClick={handleNoClick} className="text-xl px-12 py-8 rounded-full border-muted-foreground/30 hover:border-muted-foreground/50">
                   No 😢
                 </Button>
               </motion.div>
@@ -320,84 +222,30 @@ export default function ValentinePage() {
           </motion.div>
         )}
 
-        {/* Celebration Stage */}
         {stage === 'celebration' && (
-          <motion.div
-            key="celebration"
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.5 }}
-            className="text-center px-4"
-          >
-            <motion.div
-              animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.2, 1] }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-            >
+          <motion.div key="celebration" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.5 }} className="text-center px-4">
+            <motion.div animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.2, 1] }} transition={{ duration: 0.5, repeat: Infinity }}>
               <Heart className="w-32 h-32 text-primary mx-auto mb-8 fill-primary" />
             </motion.div>
-            
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-4"
-            >
-              YES!!!
-            </motion.h1>
-            
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="text-2xl text-muted-foreground"
-            >
+            <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-4">YES!!!</motion.h1>
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-2xl text-muted-foreground">
               🎉 You just made someone incredibly happy! 🎉
             </motion.p>
           </motion.div>
         )}
 
-        {/* WhatsApp Stage */}
         {stage === 'whatsapp' && (
-          <motion.div
-            key="whatsapp"
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center px-4 max-w-md"
-          >
-            <motion.div
-              className="glass-card p-8 md:p-12 glow"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-            >
-              <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
+          <motion.div key="whatsapp" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="text-center px-4 max-w-md">
+            <motion.div className="glass-card p-8 md:p-12 glow" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
+              <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
                 <Heart className="w-16 h-16 text-primary mx-auto mb-6 fill-primary/50" />
               </motion.div>
-              
-              <h2 className="text-3xl font-serif font-bold mb-4">
-                You Said <span className="gradient-text">YES!</span>
-              </h2>
-              
-              <p className="text-muted-foreground mb-8">
-                Now let {proposal.senderName} know the amazing news! 💕
-              </p>
-
-              <motion.a
-                href={generateWhatsAppLink(proposal.whatsappNumber, proposal.senderName)}
-                target="_blank"
-                rel="noopener noreferrer"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="inline-flex items-center justify-center gap-2 btn-romantic text-lg px-8 py-6 rounded-full w-full"
-              >
-                <MessageCircle className="w-6 h-6" />
-                Message on WhatsApp
+              <h2 className="text-3xl font-serif font-bold mb-4">You Said <span className="gradient-text">YES!</span></h2>
+              <p className="text-muted-foreground mb-8">Now let {proposal.senderName} know the amazing news! 💕</p>
+              <motion.a href={generateWhatsAppLink(proposal.whatsappNumber, proposal.senderName)} target="_blank" rel="noopener noreferrer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="inline-flex items-center justify-center gap-2 btn-romantic text-lg px-8 py-6 rounded-full w-full">
+                <MessageCircle className="w-6 h-6" /> Message on WhatsApp
               </motion.a>
-
-              <p className="mt-6 text-sm text-muted-foreground">
-                Made with 💕 by ValLink
-              </p>
+              <p className="mt-6 text-sm text-muted-foreground">Made with 💕 by ValLink</p>
             </motion.div>
           </motion.div>
         )}
