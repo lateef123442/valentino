@@ -17,27 +17,45 @@ const DEMO_DATA: ValentineData = {
   senderName: 'Your Secret Admirer',
   recipientName: 'Beautiful Soul',
   whatsappNumber: '+1234567890',
-  message: 'Every moment with you feels like a beautiful dream I never want to wake up from. You make my heart skip a beat every single day. 💕',
+  message: 'Every moment with you feels like a beautiful dream... 💕',
   theme: 'romantic',
   createdAt: new Date().toISOString(),
 };
 
-// --- HELPER FUNCTIONS FOR UNIVERSAL SHARING ---
+/** * SHORT LINK LOGIC 
+ * We convert the object to an array to strip out the keys and save space
+ */
 const encodeProposal = (data: ValentineData): string => {
-  // Use encodeURIComponent to make sure symbols and emojis don't break
-  const jsonString = JSON.stringify(data);
-  return btoa(encodeURIComponent(jsonString));
+  const compactData = [
+    data.senderName,      // 0
+    data.recipientName,   // 1
+    data.whatsappNumber,  // 2
+    data.message,         // 3
+    data.theme            // 4
+  ];
+  return btoa(encodeURIComponent(JSON.stringify(compactData)));
 };
 
 const decodeProposal = (encoded: string): ValentineData | null => {
   try {
-    // We must decode the URI components AFTER atob
     const decodedB64 = atob(encoded);
-    const decodedJson = decodeURIComponent(decodedB64);
-    return JSON.parse(decodedJson);
+    const arr = JSON.parse(decodeURIComponent(decodedB64));
+    return {
+      id: 'shared',
+      senderName: arr[0],
+      recipientName: arr[1],
+      whatsappNumber: arr[2],
+      message: arr[3],
+      theme: arr[4],
+      createdAt: new Date().toISOString(),
+    };
   } catch (e) {
-    console.error("Decoding error:", e);
-    return null;
+    // Fallback for old long links if any exist
+    try {
+      return JSON.parse(decodeURIComponent(atob(encoded)));
+    } catch {
+      return null;
+    }
   }
 };
 
@@ -50,7 +68,7 @@ export default function ValentinePage() {
   const [noClickCount, setNoClickCount] = useState(0);
 
   useEffect(() => {
-    // 1. Check if data is encoded in the URL hash (Critical for cross-device sharing)
+    // 1. Try Short Link from Hash
     const hash = window.location.hash.substring(1);
     if (hash) {
       const decoded = decodeProposal(hash);
@@ -60,7 +78,7 @@ export default function ValentinePage() {
       }
     }
 
-    // 2. Fallback to Local Storage/ID (Mainly for the creator's preview)
+    // 2. Try ID or Demo
     if (id === 'demo') {
       setProposal(DEMO_DATA);
     } else if (id) {
@@ -76,181 +94,125 @@ export default function ValentinePage() {
 
   useEffect(() => {
     if (stage === 'intro') {
-      const timer = setTimeout(() => setStage('message'), 3000);
+      const timer = setTimeout(() => setStage('message'), 2500);
       return () => clearTimeout(timer);
     }
     if (stage === 'message') {
-      const timer = setTimeout(() => setStage('question'), 4000);
+      const timer = setTimeout(() => setStage('question'), 3500);
       return () => clearTimeout(timer);
     }
   }, [stage]);
 
   const triggerConfetti = () => {
-    const duration = 5000;
-    const animationEnd = Date.now() + duration;
-    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
-    const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
-
-    const interval = setInterval(() => {
-      const timeLeft = animationEnd - Date.now();
-      if (timeLeft <= 0) return clearInterval(interval);
-
-      const particleCount = 50 * (timeLeft / duration);
-      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'] });
-      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, colors: ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'] });
-    }, 250);
+    const end = Date.now() + 5000;
+    const colors = ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'];
+    (function frame() {
+      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 }, colors });
+      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    }());
   };
 
   const handleYesClick = () => {
     setStage('celebration');
     triggerConfetti();
-    setTimeout(() => setStage('whatsapp'), 4000);
+    setTimeout(() => setStage('whatsapp'), 3000);
   };
 
   const handleNoHover = () => {
-    const x = Math.random() * 200 - 100;
-    const y = Math.random() * 100 - 50;
+    const x = Math.random() * 260 - 130;
+    const y = Math.random() * 140 - 70;
     setNoButtonPosition({ x, y });
   };
 
   const handleNoClick = () => {
-    setNoClickCount((prev) => prev + 1);
+    setNoClickCount(prev => prev + 1);
     handleNoHover();
-    const messages = ["Are you sure? 🥺", "Please reconsider! 💔", "One more chance? 🙏", "My heart can't take this! 😢", "Okay okay, but... really? 💕"];
-    toast(messages[noClickCount % messages.length]);
+    const msgs = ["Are you sure? 🥺", "Please reconsider! 💔", "One more chance? 🙏", "My heart can't take this! 😢"];
+    toast(msgs[noClickCount % msgs.length]);
   };
 
-  // --- UPDATED SHARE LOGIC ---
-  const getShareableUrl = () => {
-    if (!proposal) return window.location.href;
-    const baseUrl = window.location.origin + window.location.pathname;
-    const encoded = encodeProposal(proposal);
-    return `${baseUrl}#${encoded}`;
+  const handleCopyLink = () => {
+    if (!proposal) return;
+    const url = `${window.location.origin}${window.location.pathname}#${encodeProposal(proposal)}`;
+    navigator.clipboard.writeText(url);
+    toast.success('Short link copied! 💕');
   };
 
   const handleShare = async () => {
-    const shareableUrl = getShareableUrl();
+    if (!proposal) return;
+    const url = `${window.location.origin}${window.location.pathname}#${encodeProposal(proposal)}`;
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: 'ValLink - Valentine Proposal',
-          text: 'Someone special created this for you! 💕',
-          url: shareableUrl,
-        });
-      } catch (err) { /* Handle cancel */ }
+        await navigator.share({ title: 'A Special Message', text: 'Open this for a surprise! 💕', url });
+      } catch (err) {}
     } else {
       handleCopyLink();
     }
   };
 
-  const handleCopyLink = () => {
-    const shareableUrl = getShareableUrl();
-    navigator.clipboard.writeText(shareableUrl);
-    toast.success('Link copied to clipboard! You can now send it to anyone.');
-  };
-
-  if (!proposal) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-          <Heart className="w-12 h-12 text-primary" />
-        </motion.div>
-      </div>
-    );
-  }
+  if (!proposal) return <div className="min-h-screen flex items-center justify-center"><Heart className="animate-pulse text-primary w-12 h-12" /></div>;
 
   return (
-    <div className="min-h-screen bg-background particles-bg relative overflow-hidden flex items-center justify-center">
+    <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center p-4">
       <ParticleBackground />
       <FloatingHearts />
 
-      {id === 'demo' && (
-        <Button variant="ghost" onClick={() => navigate('/')} className="absolute top-4 left-4 z-50 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back
-        </Button>
-      )}
-
+      {/* Action Buttons */}
       <div className="absolute top-4 right-4 z-50 flex gap-2">
-        <Button variant="ghost" size="icon" onClick={handleCopyLink} title="Copy shareable link">
-          <Copy className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={handleShare} title="Share via apps">
-          <Share2 className="w-4 h-4" />
-        </Button>
+        <Button variant="ghost" size="icon" onClick={handleCopyLink}><Copy className="w-4 h-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={handleShare}><Share2 className="w-4 h-4" /></Button>
       </div>
 
       <AnimatePresence mode="wait">
         {stage === 'intro' && (
-          <motion.div key="intro" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="text-center px-4">
-            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-              <Heart className="w-24 h-24 text-primary mx-auto mb-8 fill-primary/30" />
-            </motion.div>
-            <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-4xl md:text-6xl font-serif font-bold gradient-text mb-4">
-              {proposal.recipientName || 'Hey You'}
-            </motion.h1>
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="text-xl text-muted-foreground">
-              Someone special has a message for you...
-            </motion.p>
+          <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
+            <Heart className="w-20 h-20 text-primary mx-auto mb-6 fill-primary/20 animate-bounce" />
+            <h1 className="text-4xl md:text-6xl font-serif font-bold gradient-text mb-2">{proposal.recipientName}</h1>
+            <p className="text-muted-foreground">Someone has a secret message for you...</p>
           </motion.div>
         )}
 
         {stage === 'message' && (
-          <motion.div key="message" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }} className="text-center px-4 max-w-2xl">
-            <motion.div className="glass-card p-8 md:p-12" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
-              <Sparkles className="w-8 h-8 text-accent mx-auto mb-4" />
-              <p className="text-xl md:text-2xl text-foreground/90 leading-relaxed italic mb-6">"{proposal.message}"</p>
-              <p className="text-muted-foreground">— {proposal.senderName}</p>
-            </motion.div>
+          <motion.div key="message" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-md w-full">
+            <div className="glass-card p-8 text-center border-primary/20 border">
+              <Sparkles className="w-6 h-6 text-accent mx-auto mb-4" />
+              <p className="text-xl italic leading-relaxed mb-6">"{proposal.message}"</p>
+              <p className="text-sm font-medium opacity-70">— {proposal.senderName}</p>
+            </div>
           </motion.div>
         )}
 
         {stage === 'question' && (
-          <motion.div key="question" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.2 }} className="text-center px-4">
-            <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }}>
-              <Heart className="w-20 h-20 text-primary mx-auto mb-8 fill-primary/50" />
-            </motion.div>
-            <h2 className="text-4xl md:text-6xl font-serif font-bold mb-4 text-glow">Will You Be My</h2>
-            <h1 className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-12">Valentine?</h1>
-            <div className="flex flex-col sm:flex-row justify-center gap-6 items-center">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button onClick={handleYesClick} className="btn-romantic text-xl px-12 py-8 rounded-full">
-                  <Heart className="w-6 h-6 mr-2 fill-current" /> Yes! 💕
-                </Button>
-              </motion.div>
-              <motion.div animate={{ x: noButtonPosition.x, y: noButtonPosition.y }} transition={{ type: 'spring', stiffness: 300, damping: 20 }} onMouseEnter={handleNoHover}>
-                <Button variant="outline" onClick={handleNoClick} className="text-xl px-12 py-8 rounded-full border-muted-foreground/30 hover:border-muted-foreground/50">
-                  No 😢
-                </Button>
+          <motion.div key="question" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
+            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-8">Will You Be My <span className="gradient-text">Valentine?</span></h2>
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
+              <Button onClick={handleYesClick} className="btn-romantic px-10 py-6 text-lg rounded-full">Yes, I will! ❤️</Button>
+              <motion.div animate={noButtonPosition} transition={{ type: 'spring', stiffness: 300 }}>
+                <Button variant="outline" onMouseEnter={handleNoHover} onClick={handleNoClick} className="rounded-full px-10 py-6">No 😢</Button>
               </motion.div>
             </div>
           </motion.div>
         )}
 
         {stage === 'celebration' && (
-          <motion.div key="celebration" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.5 }} className="text-center px-4">
-            <motion.div animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.2, 1] }} transition={{ duration: 0.5, repeat: Infinity }}>
-              <Heart className="w-32 h-32 text-primary mx-auto mb-8 fill-primary" />
-            </motion.div>
-            <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-5xl md:text-7xl font-serif font-bold gradient-text mb-4">YES!!!</motion.h1>
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-2xl text-muted-foreground">
-              🎉 You just made someone incredibly happy! 🎉
-            </motion.p>
+          <motion.div key="celebration" initial={{ scale: 0 }} animate={{ scale: 1 }} className="text-center">
+            <h1 className="text-7xl mb-4">🥰</h1>
+            <h2 className="text-5xl font-serif font-bold gradient-text">YES!!!</h2>
+            <p className="mt-4 text-muted-foreground">Sending the good news...</p>
           </motion.div>
         )}
 
         {stage === 'whatsapp' && (
-          <motion.div key="whatsapp" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="text-center px-4 max-w-md">
-            <motion.div className="glass-card p-8 md:p-12 glow" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
-              <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                <Heart className="w-16 h-16 text-primary mx-auto mb-6 fill-primary/50" />
-              </motion.div>
-              <h2 className="text-3xl font-serif font-bold mb-4">You Said <span className="gradient-text">YES!</span></h2>
-              <p className="text-muted-foreground mb-8">Now let {proposal.senderName} know the amazing news! 💕</p>
-              <motion.a href={generateWhatsAppLink(proposal.whatsappNumber, proposal.senderName)} target="_blank" rel="noopener noreferrer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="inline-flex items-center justify-center gap-2 btn-romantic text-lg px-8 py-6 rounded-full w-full">
-                <MessageCircle className="w-6 h-6" /> Message on WhatsApp
-              </motion.a>
-              <p className="mt-6 text-sm text-muted-foreground">Made with 💕 by ValLink</p>
-            </motion.div>
+          <motion.div key="whatsapp" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-xs w-full glass-card p-8 text-center">
+            <Heart className="w-12 h-12 text-primary mx-auto mb-4 fill-primary" />
+            <h3 className="text-xl font-bold mb-2">It's Official!</h3>
+            <p className="text-sm text-muted-foreground mb-6">Tell {proposal.senderName} the news on WhatsApp!</p>
+            <Button asChild className="w-full btn-romantic rounded-full">
+              <a href={generateWhatsAppLink(proposal.whatsappNumber, proposal.senderName)} target="_blank">
+                <MessageCircle className="mr-2 w-4 h-4" /> Message Now
+              </a>
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>
