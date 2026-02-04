@@ -1,221 +1,181 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageCircle, Sparkles, Copy, Share2, ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Heart, Send, Sparkles, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { FloatingHearts } from '@/components/FloatingHearts';
-import { ParticleBackground } from '@/components/ParticleBackground';
-import { getProposalById, generateWhatsAppLink } from '@/lib/storage';
-import type { ValentineData } from '@/types/valentine';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
-import confetti from 'canvas-confetti';
+import { saveProposal } from '@/lib/storage';
+import type { ValentineData } from '@/types/valentine';
 
-type Stage = 'intro' | 'message' | 'question' | 'celebration' | 'whatsapp';
+const COUNTRY_CODES = [
+  { code: '+234', country: 'Nigeria 🇳🇬' },
+  { code: '+1', country: 'USA/Canada 🇺🇸' },
+  { code: '+44', country: 'UK 🇬🇧' },
+  { code: '+91', country: 'India 🇮🇳' },
+  { code: '+254', country: 'Kenya 🇰🇪' },
+  { code: '+27', country: 'South Africa 🇿🇦' },
+  { code: '+63', country: 'Philippines 🇵🇭' },
+  { code: '+92', country: 'Pakistan 🇵🇰' },
+];
 
-const DEMO_DATA: ValentineData = {
-  id: 'demo',
-  senderName: 'Your Secret Admirer',
-  recipientName: 'Beautiful Soul',
-  whatsappNumber: '+1234567890',
-  message: 'Every moment with you feels like a beautiful dream... 💕',
-  theme: 'romantic',
-  createdAt: new Date().toISOString(),
-};
+export default function CreatePage() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [selectedCode, setSelectedCode] = useState('+234');
+  const [phoneNum, setPhoneNum] = useState('');
+  
+  const [formData, setFormData] = useState({
+    senderName: '',
+    recipientName: '',
+    message: '',
+    theme: 'romantic' as const,
+  });
 
-/** * SHORT LINK LOGIC 
- * We convert the object to an array to strip out the keys and save space
- */
-const encodeProposal = (data: ValentineData): string => {
-  const compactData = [
-    data.senderName,      // 0
-    data.recipientName,   // 1
-    data.whatsappNumber,  // 2
-    data.message,         // 3
-    data.theme            // 4
-  ];
-  return btoa(encodeURIComponent(JSON.stringify(compactData)));
-};
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
 
-const decodeProposal = (encoded: string): ValentineData | null => {
-  try {
-    const decodedB64 = atob(encoded);
-    const arr = JSON.parse(decodeURIComponent(decodedB64));
-    return {
-      id: 'shared',
-      senderName: arr[0],
-      recipientName: arr[1],
-      whatsappNumber: arr[2],
-      message: arr[3],
-      theme: arr[4],
+    // 1. Clean and Format Phone Number
+    const cleanNumber = phoneNum.replace(/^0+/, '').replace(/\D/g, '');
+    if (cleanNumber.length < 7) {
+      toast.error("Please enter a valid phone number");
+      setLoading(false);
+      return;
+    }
+    const finalWhatsAppNumber = `${selectedCode}${cleanNumber}`;
+
+    // 2. Prepare Data
+    const id = Math.random().toString(36).substring(2, 10);
+    const newProposal: ValentineData = {
+      id,
+      ...formData,
+      whatsappNumber: finalWhatsAppNumber,
       createdAt: new Date().toISOString(),
     };
-  } catch (e) {
-    // Fallback for old long links if any exist
+
     try {
-      return JSON.parse(decodeURIComponent(atob(encoded)));
-    } catch {
-      return null;
-    }
-  }
-};
-
-export default function ValentinePage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [proposal, setProposal] = useState<ValentineData | null>(null);
-  const [stage, setStage] = useState<Stage>('intro');
-  const [noButtonPosition, setNoButtonPosition] = useState({ x: 0, y: 0 });
-  const [noClickCount, setNoClickCount] = useState(0);
-
-  useEffect(() => {
-    // 1. Try Short Link from Hash
-    const hash = window.location.hash.substring(1);
-    if (hash) {
-      const decoded = decodeProposal(hash);
-      if (decoded) {
-        setProposal(decoded);
-        return;
-      }
-    }
-
-    // 2. Try ID or Demo
-    if (id === 'demo') {
-      setProposal(DEMO_DATA);
-    } else if (id) {
-      const data = getProposalById(id);
-      if (data) {
-        setProposal(data);
-      } else {
-        toast.error('Valentine not found');
-        navigate('/');
-      }
-    }
-  }, [id, navigate]);
-
-  useEffect(() => {
-    if (stage === 'intro') {
-      const timer = setTimeout(() => setStage('message'), 2500);
-      return () => clearTimeout(timer);
-    }
-    if (stage === 'message') {
-      const timer = setTimeout(() => setStage('question'), 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [stage]);
-
-  const triggerConfetti = () => {
-    const end = Date.now() + 5000;
-    const colors = ['#e11d48', '#f472b6', '#fbbf24', '#ffffff'];
-    (function frame() {
-      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 }, colors });
-      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 }, colors });
-      if (Date.now() < end) requestAnimationFrame(frame);
-    }());
-  };
-
-  const handleYesClick = () => {
-    setStage('celebration');
-    triggerConfetti();
-    setTimeout(() => setStage('whatsapp'), 3000);
-  };
-
-  const handleNoHover = () => {
-    const x = Math.random() * 260 - 130;
-    const y = Math.random() * 140 - 70;
-    setNoButtonPosition({ x, y });
-  };
-
-  const handleNoClick = () => {
-    setNoClickCount(prev => prev + 1);
-    handleNoHover();
-    const msgs = ["Are you sure? 🥺", "Please reconsider! 💔", "One more chance? 🙏", "My heart can't take this! 😢"];
-    toast(msgs[noClickCount % msgs.length]);
-  };
-
-  const handleCopyLink = () => {
-    if (!proposal) return;
-    const url = `${window.location.origin}${window.location.pathname}#${encodeProposal(proposal)}`;
-    navigator.clipboard.writeText(url);
-    toast.success('Short link copied! 💕');
-  };
-
-  const handleShare = async () => {
-    if (!proposal) return;
-    const url = `${window.location.origin}${window.location.pathname}#${encodeProposal(proposal)}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'A Special Message', text: 'Open this for a surprise! 💕', url });
-      } catch (err) {}
-    } else {
-      handleCopyLink();
+      saveProposal(newProposal);
+      toast.success("Proposal created successfully! 💕");
+      
+      // Navigate to the view page with the ID
+      // The ValentinePage will automatically handle generating the short link hash
+      navigate(`/v/${id}`);
+    } catch (error) {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
-
-  if (!proposal) return <div className="min-h-screen flex items-center justify-center"><Heart className="animate-pulse text-primary w-12 h-12" /></div>;
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center p-4">
-      <ParticleBackground />
-      <FloatingHearts />
+    <div className="min-h-screen bg-background p-4 md:p-8 flex flex-col items-center">
+      <div className="w-full max-w-2xl">
+        <Button 
+          variant="ghost" 
+          onClick={() => navigate('/')} 
+          className="mb-6 text-muted-foreground"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Home
+        </Button>
 
-      {/* Action Buttons */}
-      <div className="absolute top-4 right-4 z-50 flex gap-2">
-        <Button variant="ghost" size="icon" onClick={handleCopyLink}><Copy className="w-4 h-4" /></Button>
-        <Button variant="ghost" size="icon" onClick={handleShare}><Share2 className="w-4 h-4" /></Button>
-      </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-8"
+        >
+          <Heart className="w-12 h-12 text-primary mx-auto mb-4 fill-primary/20" />
+          <h1 className="text-3xl md:text-4xl font-serif font-bold gradient-text">Create Your Proposal</h1>
+          <p className="text-muted-foreground mt-2">Fill in the details to create a magical moment</p>
+        </motion.div>
 
-      <AnimatePresence mode="wait">
-        {stage === 'intro' && (
-          <motion.div key="intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
-            <Heart className="w-20 h-20 text-primary mx-auto mb-6 fill-primary/20 animate-bounce" />
-            <h1 className="text-4xl md:text-6xl font-serif font-bold gradient-text mb-2">{proposal.recipientName}</h1>
-            <p className="text-muted-foreground">Someone has a secret message for you...</p>
-          </motion.div>
-        )}
-
-        {stage === 'message' && (
-          <motion.div key="message" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-md w-full">
-            <div className="glass-card p-8 text-center border-primary/20 border">
-              <Sparkles className="w-6 h-6 text-accent mx-auto mb-4" />
-              <p className="text-xl italic leading-relaxed mb-6">"{proposal.message}"</p>
-              <p className="text-sm font-medium opacity-70">— {proposal.senderName}</p>
+        <Card className="glass-card p-6 md:p-8 border-primary/10 shadow-xl">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Your Name</label>
+                <Input
+                  required
+                  placeholder="e.g. Ahmed"
+                  value={formData.senderName}
+                  onChange={(e) => setFormData({ ...formData, senderName: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Their Name</label>
+                <Input
+                  required
+                  placeholder="e.g. Sarah"
+                  value={formData.recipientName}
+                  onChange={(e) => setFormData({ ...formData, recipientName: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
             </div>
-          </motion.div>
-        )}
 
-        {stage === 'question' && (
-          <motion.div key="question" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-            <h2 className="text-3xl md:text-5xl font-serif font-bold mb-8">Will You Be My <span className="gradient-text">Valentine?</span></h2>
-            <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
-              <Button onClick={handleYesClick} className="btn-romantic px-10 py-6 text-lg rounded-full">Yes, I will! ❤️</Button>
-              <motion.div animate={noButtonPosition} transition={{ type: 'spring', stiffness: 300 }}>
-                <Button variant="outline" onMouseEnter={handleNoHover} onClick={handleNoClick} className="rounded-full px-10 py-6">No 😢</Button>
-              </motion.div>
+            {/* WhatsApp Number Section with Dropdown */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                Your WhatsApp Number 
+                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full">Required</span>
+              </label>
+              <div className="flex shadow-sm rounded-md overflow-hidden ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 transition-all">
+                <select
+                  value={selectedCode}
+                  onChange={(e) => setSelectedCode(e.target.value)}
+                  className="bg-muted border-y border-l border-input px-3 py-2 text-sm outline-none cursor-pointer hover:bg-muted/80 transition-colors"
+                >
+                  {COUNTRY_CODES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} ({c.country.split(' ')[0]})
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  type="tel"
+                  required
+                  placeholder="8012345678"
+                  value={phoneNum}
+                  onChange={(e) => setPhoneNum(e.target.value.replace(/\D/g, ''))}
+                  className="rounded-l-none border-l-0 bg-background/50 focus-visible:ring-0"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground italic px-1">
+                Note: This is where you'll receive their response.
+              </p>
             </div>
-          </motion.div>
-        )}
 
-        {stage === 'celebration' && (
-          <motion.div key="celebration" initial={{ scale: 0 }} animate={{ scale: 1 }} className="text-center">
-            <h1 className="text-7xl mb-4">🥰</h1>
-            <h2 className="text-5xl font-serif font-bold gradient-text">YES!!!</h2>
-            <p className="mt-4 text-muted-foreground">Sending the good news...</p>
-          </motion.div>
-        )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Your Romantic Message</label>
+              <Textarea
+                required
+                placeholder="Write something from the heart..."
+                className="min-h-[120px] bg-background/50 resize-none"
+                value={formData.message}
+                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+              />
+            </div>
 
-        {stage === 'whatsapp' && (
-          <motion.div key="whatsapp" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="max-w-xs w-full glass-card p-8 text-center">
-            <Heart className="w-12 h-12 text-primary mx-auto mb-4 fill-primary" />
-            <h3 className="text-xl font-bold mb-2">It's Official!</h3>
-            <p className="text-sm text-muted-foreground mb-6">Tell {proposal.senderName} the news on WhatsApp!</p>
-            <Button asChild className="w-full btn-romantic rounded-full">
-              <a href={generateWhatsAppLink(proposal.whatsappNumber, proposal.senderName)} target="_blank">
-                <MessageCircle className="mr-2 w-4 h-4" /> Message Now
-              </a>
+            <Button 
+              type="submit" 
+              disabled={loading}
+              className="w-full btn-romantic h-12 text-lg font-medium rounded-full shadow-lg hover:shadow-primary/20 transition-all"
+            >
+              {loading ? (
+                "Creating magic..."
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate Proposal Link
+                </>
+              )}
             </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </form>
+        </Card>
+      </div>
     </div>
   );
 }
